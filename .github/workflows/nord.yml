@@ -1,8 +1,7 @@
-name: Test NordVPN Connection (Docker)
+name: Test NordVPN Connection
 
 on:
-  push:  # Runs automatically on each commit
-  workflow_dispatch:  # Also allows manual triggering
+  workflow_dispatch:
 
 jobs:
   test-nordvpn:
@@ -11,38 +10,22 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
-      - name: Run NordVPN inside Docker
+      - name: Install NordVPN CLI
         run: |
-          docker run --rm --privileged --cap-add=NET_ADMIN --cap-add=SYS_MODULE ubuntu:latest bash -c '
-            set -e
-            
-            # Set non-interactive mode for package installation
-            export DEBIAN_FRONTEND=noninteractive
+          wget -qO - https://downloads.nordcdn.com/apps/linux/install.sh | sudo bash
+          sudo groupadd nordvpn || true
+          sudo usermod -aG nordvpn $USER
 
-            # Install dependencies
-            apt update && apt install -y --no-install-recommends \
-              curl wget sudo iproute2 apt-transport-https ca-certificates gnupg
-
-            # Install NordVPN using the official script
-            wget -qO - https://downloads.nordcdn.com/apps/linux/install.sh | sudo bash
-
-            # Update package lists and install NordVPN
-            sudo apt update && sudo apt install -y --no-install-recommends nordvpn
-
-            # Log in using NordVPN token
-            sudo nordvpn login --token "${{ secrets.NORDVPN_TOKEN }}"
-
-            # Configure NordVPN
-            sudo nordvpn set technology nordlynx
-
-            # Connect to NordVPN
-            sudo nordvpn connect
-            sleep 10
-
-            # Retrieve public IP and display it
-            echo "Connected IP: $(curl -s https://api64.ipify.org)"
-          '
-
-      - name: Ensure Docker Cleanup
+      - name: Log in to NordVPN using Token
         run: |
-          docker system prune -f
+          sudo nordvpn login --token "${{ secrets.NORDVPN_TOKEN }}"
+          sudo nordvpn set technology nordlynx
+
+      - name: Connect to NordVPN
+        run: |
+          sudo nordvpn connect
+          sleep 10 # Wait for connection to establish
+
+      - name: Get and Print IP Address
+        run: |
+          curl -s https://api64.ipify.org
