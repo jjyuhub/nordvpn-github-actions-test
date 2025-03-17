@@ -1,7 +1,7 @@
 name: Test NordVPN Connection (Docker)
 
 on:
-  push:         # Runs automatically on each commit
+  push:  # Runs automatically on each commit
   workflow_dispatch:  # Also allows manual triggering
 
 jobs:
@@ -13,27 +13,25 @@ jobs:
 
       - name: Run NordVPN inside Docker
         run: |
-          docker run --rm --cap-add=NET_ADMIN --cap-add=SYS_ADMIN ubuntu:latest bash -c '
+          docker run --rm --privileged --security-opt seccomp=unconfined ubuntu:latest bash -c '
             set -e
             
-            # Install NordVPN using the official script (container runs as root so sudo isn'\''t needed)
-            wget -qO - https://downloads.nordcdn.com/apps/linux/install.sh | bash
+            # Install NordVPN using the official script
+            wget -qO - https://downloads.nordcdn.com/apps/linux/install.sh | sudo bash
 
-            # Update package lists and install NordVPN and curl
-            apt update && apt install -y nordvpn curl
+            # Update package lists and install NordVPN
+            sudo apt update && sudo apt install -y nordvpn
 
-            # Log in using the NordVPN token from GitHub Secrets
-            nordvpn login --token "${{ secrets.NORDVPN_TOKEN }}"
+            # Log in using NordVPN token
+            sudo nordvpn login --token "${{ secrets.NORDVPN_TOKEN }}"
 
-            # Configure NordVPN to use NordLynx technology
-            nordvpn set technology nordlynx
+            # Configure NordVPN
+            sudo nordvpn set technology nordlynx
 
             # Connect to NordVPN
-            nordvpn connect
-
-            # Wait a few seconds to ensure the connection is established
+            sudo nordvpn connect
             sleep 10
 
-            # Retrieve and display the connected public IP
+            # Retrieve public IP and display it
             echo "Connected IP: $(curl -s https://api64.ipify.org)"
           '
