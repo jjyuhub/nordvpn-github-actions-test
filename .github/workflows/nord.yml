@@ -1,265 +1,31 @@
-name: YouTube Visit with VPN in Container
+name: Test NordVPN Connection
 
 on:
-  push:
-  schedule:
-    - cron: '*/15 * * * *'  # Run every 15 minutes
   workflow_dispatch:
-    inputs:
-      video_url:
-        description: 'YouTube Video URL'
-        required: true
-        default: 'https://www.youtube.com/watch?v=Km-HyBwxcR8'
 
 jobs:
-  youtube-vpn:
+  test-nordvpn:
     runs-on: ubuntu-latest
-    container:
-      image: ubuntu:latest
-      options: --privileged --security-opt seccomp=unconfined --security-opt apparmor=unconfined
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
-      - name: Install Base Dependencies, Node.js, and Chromium Dependencies
+      - name: Install NordVPN CLI
         run: |
-          echo "Updating package lists and installing base dependencies..."
-          apt update && apt install -y --no-install-recommends curl wget sudo iproute2 apt-transport-https gnupg ca-certificates
-          echo "Installing Node.js 20 via NodeSource..."
-          curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
-          apt install -y nodejs
-          echo "Installing required dependencies for Puppeteer (Chromium)..."
-          apt install -y libatk1.0-0 libatk-bridge2.0-0 libcups2 libdbus-1-3 libgdk-pixbuf2.0-0 \
-            libnspr4 libnss3 libx11-xcb1 libxcomposite1 libxdamage1 libxrandr2 libgbm1 \
-            libpango-1.0-0 libxshmfence1 libglib2.0-0 libxfixes3 libxkbcommon0
-          echo "Installed Node.js version: $(node -v) and npm version: $(npm -v)"
+          wget -qO - https://downloads.nordcdn.com/apps/linux/install.sh | sudo bash
+          sudo groupadd nordvpn || true
+          sudo usermod -aG nordvpn $USER
 
-      - name: Install and Connect NordVPN
-        env:
-          NORDVPN_TOKEN: ${{ secrets.NORDVPN_TOKEN }}
+      - name: Log in to NordVPN using Token
         run: |
-          echo "Adding NordVPN repository manually..."
-          echo "deb https://repo.nordvpn.com/deb/nordvpn/debian stable main" | sudo tee /etc/apt/sources.list.d/nordvpn.list
-          echo "Downloading NordVPN GPG key with wget..."
-          if ! wget -q -O /tmp/nordvpn_public.asc https://repo.nordvpn.com/gpg/nordvpn_public.asc; then
-            echo "wget failed, trying with curl..."
-            curl -fsSL https://repo.nordvpn.com/gpg/nordvpn_public.asc -o /tmp/nordvpn_public.asc
-          fi
-          if [ ! -s /tmp/nordvpn_public.asc ]; then
-            echo "Failed to download a valid NordVPN GPG key. Exiting."
-            exit 1
-          fi
-          echo "Importing GPG key using dearmor..."
-          sudo gpg --dearmor -o /etc/apt/trusted.gpg.d/nordvpn.gpg /tmp/nordvpn_public.asc
-          echo "Updating package lists..."
-          sudo apt update
-          echo "Installing the nordvpn package..."
-          if sudo apt install -y nordvpn; then
-            echo "NordVPN package installed successfully."
-          else
-            echo "Failed to install nordvpn package. Exiting."
-            exit 1
-          fi
-          echo "Starting NordVPN service..."
-          sudo /etc/init.d/nordvpn start || { echo "Failed to start NordVPN service."; exit 1; }
-          sleep 5
-          echo "Logging in and connecting to NordVPN..."
-          sudo nordvpn login --token "$NORDVPN_TOKEN"
+          sudo nordvpn login --token "${{ secrets.NORDVPN_TOKEN }}"
           sudo nordvpn set technology nordlynx
+
+      - name: Connect to NordVPN
+        run: |
           sudo nordvpn connect
-          sleep 10
-          echo "VPN Connected. Public IP: $(curl -s https://api64.ipify.org)"
+          sleep 10 # Wait for connection to establish
 
-      - name: Install YouTube Visit Dependencies
+      - name: Get and Print IP Address
         run: |
-          echo "Initializing Node project and installing Puppeteer dependencies..."
-          npm init -y
-          npm install puppeteer puppeteer-core puppeteer-extra puppeteer-extra-plugin-stealth fs
-
-      - name: Create Puppeteer Script (VPN mode)
-        run: |
-          mkdir -p scripts screenshots
-          cat > scripts/youtube-visit.js << 'EOL'
-          const puppeteer = require('puppeteer-extra');
-          const StealthPlugin = require('puppeteer-extra-plugin-stealth');
-          const fs = require('fs');
-          puppeteer.use(StealthPlugin());
-
-          function sleep(ms) {
-              return new Promise(resolve => setTimeout(resolve, ms));
-          }
-
-          async function safeScreenshot(page, path) {
-              try {
-                  await page.screenshot({ path });
-                  console.log(`Screenshot taken: ${path}`);
-              } catch (err) {
-                  console.error(`Failed to take screenshot ${path}: ${err.message}`);
-              }
-          }
-
-          async function acceptCookies(page) {
-              try {
-                  const buttonHandle = await page.evaluateHandle(() => {
-                      const buttons = Array.from(document.querySelectorAll('button'));
-                      return buttons.find(btn => /agree|accept/i.test(btn.innerText));
-                  });
-                  if (buttonHandle) {
-                      console.log("Cookie consent prompt found. Clicking...");
-                      await page.evaluate(() => {
-                          const btn = Array.from(document.querySelectorAll('button'))
-                              .find(btn => /agree|accept/i.test(btn.innerText));
-                          if (btn) btn.click();
-                      });
-                      await sleep(2000);
-                      await safeScreenshot(page, `./screenshots/youtube_cookies_accepted_${Date.now()}.png`);
-                  } else {
-                      console.log("No cookie consent prompt found.");
-                  }
-              } catch (e) {
-                  console.error("Error while accepting cookies:", e.message);
-              }
-          }
-
-          async function checkPublicIP(browser) {
-              const tempPage = await browser.newPage();
-              try {
-                  await tempPage.goto("https://api64.ipify.org?format=json", { waitUntil: 'networkidle2', timeout: 320000 });
-                  const ipJson = await tempPage.evaluate(() => JSON.parse(document.body.innerText));
-                  console.log("Public IP:", ipJson.ip);
-              } catch (error) {
-                  console.error("Error fetching public IP:", error.message);
-              } finally {
-                  await tempPage.close();
-              }
-          }
-
-          async function visitYouTube(videoUrl) {
-              console.log('Launching browser without proxy (using VPN connection)...');
-              const browser = await puppeteer.launch({
-                  headless: "new",
-                  ignoreHTTPSErrors: true,
-                  executablePath: require('puppeteer').executablePath(),
-                  args: [
-                      '--ignore-certificate-errors',
-                      '--no-sandbox',
-                      '--disable-setuid-sandbox',
-                      '--disable-dev-shm-usage',
-                      '--disable-gpu'
-                  ]
-              });
-
-              // Check public IP before navigating
-              console.log("Checking public IP before visiting video...");
-              await checkPublicIP(browser);
-
-              const page = await browser.newPage();
-              try {
-                  const maxRetries = 3;
-                  let navigated = false;
-                  for (let attempt = 1; attempt <= maxRetries; attempt++) {
-                      try {
-                          console.log(`Attempt ${attempt} to visit ${videoUrl}`);
-                          await page.goto(videoUrl, { waitUntil: 'networkidle2', timeout: 320000 });
-                          navigated = true;
-                          break;
-                      } catch (navError) {
-                          console.error(`Attempt ${attempt} failed: ${navError.message}`);
-                          if (attempt < maxRetries) {
-                              console.log("Retrying in 5 seconds...");
-                              await sleep(5000);
-                          } else {
-                              throw navError;
-                          }
-                      }
-                  }
-                  if (!navigated) {
-                      throw new Error("Navigation failed after maximum retries.");
-                  }
-                  await safeScreenshot(page, `./screenshots/youtube_loaded_${Date.now()}.png`);
-                  await acceptCookies(page);
-
-                  // Check public IP after navigation
-                  console.log("Checking public IP after visiting video...");
-                  await checkPublicIP(browser);
-
-                  console.log("Checking if video is already playing...");
-                  const isPlaying = await page.evaluate(() => {
-                      const video = document.querySelector("video");
-                      return video && !video.paused;
-                  });
-                  if (!isPlaying) {
-                      console.log("Video is not playing. Attempting to click Play button...");
-                      const playButtonSelectors = [
-                          'button[aria-label="Play"]',
-                          'button[title="Play (k)"]',
-                          '.ytp-play-button'
-                      ];
-                      let playButton = null;
-                      for (const selector of playButtonSelectors) {
-                          playButton = await page.$(selector);
-                          if (playButton) {
-                              console.log(`Play button found using selector: ${selector}`);
-                              await playButton.click();
-                              console.log("Video started playing.");
-                              await safeScreenshot(page, `./screenshots/youtube_play_clicked_${Date.now()}.png`);
-                              break;
-                          }
-                      }
-                      if (!playButton) {
-                          console.warn("Play button not found, skipping play action.");
-                      }
-                  } else {
-                      console.log("Video is already playing. Skipping Play button click.");
-                  }
-                  console.log("Watching video for 41 seconds with periodic screenshots...");
-                  for (let t = 5; t <= 41; t += 5) {
-                      await sleep(5000);
-                      await safeScreenshot(page, `./screenshots/youtube_watch_${t}s_${Date.now()}.png`);
-                  }
-                  await safeScreenshot(page, `./screenshots/youtube_finished_${Date.now()}.png`);
-                  const finalHtml = await page.content();
-                  const htmlFile = `./screenshots/final_page_${Date.now()}.html`;
-                  fs.writeFileSync(htmlFile, finalHtml);
-                  console.log(`Final HTML page saved: ${htmlFile}`);
-              } catch (error) {
-                  console.error("Error during page interaction:", error.message);
-                  try {
-                      fs.writeFileSync("./screenshots/failure_page_content.html", await page.content());
-                  } catch (e) {
-                      console.error("Failed to save failure page content:", e.message);
-                  }
-                  await safeScreenshot(page, "./screenshots/failure_screenshot.png");
-              } finally {
-                  console.log("Closing browser...");
-                  await browser.close();
-              }
-          }
-
-          async function run() {
-              const videoUrl = process.argv[2] || "https://www.youtube.com/watch?v=Km-HyBwxcR8";
-              await visitYouTube(videoUrl);
-          }
-
-          run().catch(error => {
-              console.error("Script failed:", error.message);
-          });
-          EOL
-
-      - name: Run Puppeteer Script
-        run: |
-          VIDEO_URL="${{ github.event.inputs.video_url || 'https://www.youtube.com/watch?v=Km-HyBwxcR8' }}"
-          echo "Visiting: $VIDEO_URL"
-          node scripts/youtube-visit.js "$VIDEO_URL" | tee script_output.log
-
-      - name: Upload Debug Artifacts
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: youtube-debug-artifact-${{ runner.os }}
-          path: |
-            screenshots/
-            *.log
-            failure_page_content.html
-            failure_screenshot.png
-          retention-days: 7
+          curl -s https://api64.ipify.org
