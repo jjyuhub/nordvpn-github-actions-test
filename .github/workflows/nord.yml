@@ -1,72 +1,41 @@
 name: Test NordVPN Connection (Docker)
 
 on:
-  push:           # Runs automatically on each commit
+  push:  # Runs automatically on each commit
   workflow_dispatch:  # Also allows manual triggering
 
 jobs:
-  test-nordvpn-manual:
+  test-nordvpn:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
-      - name: Run NordVPN using manual repository approach with service start and exit code check
+      - name: Run NordVPN inside Docker
         run: |
-          # Disable immediate exit on error in the host shell so we can capture the exit code.
-          set +e
-          docker run --rm --privileged ubuntu:latest bash -c '
+          docker run --rm --privileged --cap-add=NET_ADMIN --cap-add=SYS_MODULE ubuntu:latest bash -c '
             set -e
-            export DEBIAN_FRONTEND=noninteractive
 
-            echo "Installing base dependencies..."
-            apt update && apt install -y --no-install-recommends curl wget sudo iproute2 apt-transport-https gnupg ca-certificates
+            # Install NordVPN using the official script
+            wget -qO - https://downloads.nordcdn.com/apps/linux/install.sh | sudo bash
 
-            echo "Adding NordVPN repository manually..."
-            echo "deb https://repo.nordvpn.com/deb/nordvpn/debian stable main" | sudo tee /etc/apt/sources.list.d/nordvpn.list
+            # Update package lists and install NordVPN
+            sudo apt update && sudo apt install -y nordvpn
 
-            echo "Downloading NordVPN GPG key with wget..."
-            if ! wget -q -O /tmp/nordvpn_public.asc https://repo.nordvpn.com/gpg/nordvpn_public.asc; then
-              echo "wget failed, trying with curl..."
-              curl -fsSL https://repo.nordvpn.com/gpg/nordvpn_public.asc -o /tmp/nordvpn_public.asc
-            fi
-
-            if [ ! -s /tmp/nordvpn_public.asc ]; then
-              echo "Failed to download a valid NordVPN GPG key. Exiting."
-              exit 1
-            fi
-
-            echo "Importing GPG key using dearmor..."
-            sudo gpg --dearmor -o /etc/apt/trusted.gpg.d/nordvpn.gpg /tmp/nordvpn_public.asc
-
-            echo "Updating package lists..."
-            sudo apt update
-
-            echo "Attempting to install the nordvpn package..."
-            if sudo apt install -y nordvpn; then
-              echo "NordVPN package installed successfully."
-            else
-              echo "Failed to install nordvpn package. Exiting."
-              exit 1
-            fi
-
-            echo "Starting NordVPN background service..."
-            sudo /etc/init.d/nordvpn start || { echo "Failed to start NordVPN service."; exit 1; }
-            sleep 5
-
-            echo "Logging in and connecting..."
+            # Log in using NordVPN token
             sudo nordvpn login --token "${{ secrets.NORDVPN_TOKEN }}"
+
+            # Configure NordVPN
             sudo nordvpn set technology nordlynx
+
+            # Connect to NordVPN
             sudo nordvpn connect
             sleep 10
 
+            # Retrieve public IP and display it
             echo "Connected IP: $(curl -s https://api64.ipify.org)"
           '
-          rc=$?
-          echo "Docker run exit code: $rc"
-          if [ $rc -eq 125 ]; then
-            echo "Ignoring exit code 125 from Docker cleanup error."
-            exit 0
-          else
-            exit $rc
-          fi
+
+      - name: Ensure Docker Cleanup
+        run: |
+          docker system prune -f
