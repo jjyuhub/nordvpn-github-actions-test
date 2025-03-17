@@ -158,9 +158,84 @@ jobs:
                   await tempPage.close();
               }
           }
+          async function checkForSignInMessage(page) {
+              const signInTexts = [
+                  "Sign in to confirm",
+                  "Confirm your identity",
+                  "Confirm it's you",
+                  "Verify your identity",
+                  "Sign in to continue"
+              ];
+              
+              try {
+                  const pageText = await page.evaluate(() => document.body.innerText);
+                  for (const text of signInTexts) {
+                      if (pageText.includes(text)) {
+                          console.log("=".repeat(50));
+                          console.log(`SIGN IN MESSAGE DETECTED: "${text}"`);
+                          console.log("Full context of the message:");
+                          
+                          // Get more context around the message
+                          const textContext = await page.evaluate((searchText) => {
+                              const elements = Array.from(document.querySelectorAll('*'));
+                              for (const el of elements) {
+                                  if (el.innerText && el.innerText.includes(searchText)) {
+                                      // Return the parent container's text or nearby context
+                                      return el.parentElement?.innerText || el.innerText;
+                                  }
+                              }
+                              return "Context not found";
+                          }, text);
+                          
+                          console.log(textContext);
+                          console.log("=".repeat(50));
+                          return true;
+                      }
+                  }
+                  return false;
+              } catch (error) {
+                  console.error("Error checking for sign-in message:", error.message);
+                  return false;
+              }
+          }
+
+          async function reconnectVPN() {
+              console.log("Reconnecting to a different VPN server...");
+              try {
+                  await new Promise((resolve, reject) => {
+                      const cmd = "sudo nordvpn disconnect && sleep 5 && sudo nordvpn connect";
+                      require('child_process').exec(cmd, (error, stdout, stderr) => {
+                          if (error) {
+                              console.error("VPN reconnection error:", error.message);
+                              reject(error);
+                              return;
+                          }
+                          console.log("VPN reconnection output:", stdout);
+                          if (stderr) console.error("VPN reconnection stderr:", stderr);
+                          resolve();
+                      });
+                  });
+                  
+                  // Wait for connection to stabilize
+                  await sleep(10000);
+                  
+                  // Check new IP
+                  const newIP = await new Promise((resolve) => {
+                      require('child_process').exec("curl -s https://api64.ipify.org", (error, stdout) => {
+                          resolve(stdout.trim() || "Unknown");
+                      });
+                  });
+                  console.log("New VPN IP:", newIP);
+                  return true;
+              } catch (error) {
+                  console.error("Failed to reconnect VPN:", error.message);
+                  return false;
+              }
+          }
+
           async function visitYouTube(videoUrl) {
               console.log('Launching browser without proxy (using VPN connection)...');
-              const browser = await puppeteer.launch({
+              let browser = await puppeteer.launch({
                   headless: "new",
                   ignoreHTTPSErrors: true,
                   executablePath: require('puppeteer').executablePath(),
@@ -174,28 +249,89 @@ jobs:
               });
               console.log("Checking public IP before visiting video...");
               await checkPublicIP(browser);
-              const page = await browser.newPage();
+              let page = await browser.newPage();
               try {
                   const maxRetries = 3;
                   let navigated = false;
-                  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+                  
+                  // Set maximum reconnect attempts
+                  const maxReconnectAttempts = 5;
+                  let reconnectAttempt = 0;
+                  
+                  // Main navigation loop with reconnect logic
+                  while (reconnectAttempt <= maxReconnectAttempts) {
                       try {
-                          console.log(`Attempt ${attempt} to visit ${videoUrl}`);
-                          await page.goto(videoUrl, { waitUntil: 'networkidle2', timeout: 320000 });
-                          navigated = true;
-                          break;
-                      } catch (navError) {
-                          console.error(`Attempt ${attempt} failed: ${navError.message}`);
-                          if (attempt < maxRetries) {
-                              console.log("Retrying in 5 seconds...");
-                              await sleep(5000);
-                          } else {
-                              throw navError;
+                          if (reconnectAttempt > 0) {
+                              console.log(`Reconnect attempt ${reconnectAttempt} of ${maxReconnectAttempts}`);
                           }
+                          
+                          // Try to navigate
+                          for (let attempt = 1; attempt <= maxRetries; attempt++) {
+                              try {
+                                  console.log(`Attempt ${attempt} to visit ${videoUrl}`);
+                                  await page.goto(videoUrl, { waitUntil: 'networkidle2', timeout: 320000 });
+                                  navigated = true;
+                                  break;
+                              } catch (navError) {
+                                  console.error(`Attempt ${attempt} failed: ${navError.message}`);
+                                  if (attempt < maxRetries) {
+                                      console.log("Retrying in 5 seconds...");
+                                      await sleep(5000);
+                                  } else {
+                                      throw navError;
+                                  }
+                              }
+                          }
+                          
+                          if (!navigated) {
+                              throw new Error("Navigation failed after maximum retries.");
+                          }
+                          
+                          // Check for sign-in messages
+                          const signInDetected = await checkForSignInMessage(page);
+                          if (signInDetected) {
+                              console.log("Sign-in message detected. Taking screenshot...");
+                              await safeScreenshot(page, `./screenshots/sign_in_detected_${Date.now()}.png`);
+                              
+                              reconnectAttempt++;
+                              if (reconnectAttempt <= maxReconnectAttempts) {
+                                  console.log("Closing browser and reconnecting VPN...");
+                                  await browser.close();
+                                  const reconnected = await reconnectVPN();
+                                  if (!reconnected) {
+                                      throw new Error("Failed to reconnect VPN. Aborting.");
+                                  }
+                                  
+                                  // Create a new browser after reconnect
+                                  console.log("Relaunching browser with new IP...");
+                                  browser = await puppeteer.launch({
+                                      headless: "new",
+                                      ignoreHTTPSErrors: true,
+                                      executablePath: require('puppeteer').executablePath(),
+                                      args: [
+                                          '--ignore-certificate-errors',
+                                          '--no-sandbox',
+                                          '--disable-setuid-sandbox',
+                                          '--disable-dev-shm-usage',
+                                          '--disable-gpu'
+                                      ]
+                                  });
+                                  page = await browser.newPage();
+                                  continue; // Skip the rest and retry with new connection
+                              } else {
+                                  throw new Error("Exceeded maximum reconnect attempts. Unable to bypass sign-in detection.");
+                              }
+                          }
+                          
+                          // If we made it here, we successfully navigated without sign-in detection
+                          break;
+                      } catch (error) {
+                          console.error("Error in navigation/reconnect loop:", error.message);
+                          if (reconnectAttempt >= maxReconnectAttempts) {
+                              throw error; // Re-throw if we've exceeded max attempts
+                          }
+                          reconnectAttempt++;
                       }
-                  }
-                  if (!navigated) {
-                      throw new Error("Navigation failed after maximum retries.");
                   }
                   await safeScreenshot(page, `./screenshots/youtube_loaded_${Date.now()}.png`);
                   await acceptCookies(page);
