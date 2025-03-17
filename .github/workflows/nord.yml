@@ -21,15 +21,20 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
-      - name: Install Base Dependencies, Node.js, and Chromium Dependencies
+      - name: Install Base and Comprehensive Dependencies, Node.js, and Chromium Dependencies
         run: |
-          echo "Updating package lists and installing base dependencies..."
-          apt update && apt install -y \
+          echo "Updating package lists..."
+          apt update
+          
+          echo "Installing base packages..."
+          apt install -y \
             curl wget sudo iproute2 apt-transport-https gnupg ca-certificates
+
           echo "Installing Node.js 20 via NodeSource..."
           curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
           apt install -y nodejs
-          echo "Installing comprehensive Chromium dependencies..."
+
+          echo "Installing comprehensive Chromium and system dependencies..."
           apt install -y \
             ca-certificates \
             fonts-liberation \
@@ -61,10 +66,21 @@ jobs:
             libxtst6 \
             libxkbcommon0 \
             libcairo2 \
-            libasound2 \
+            libasound2t64 \
             lsb-release \
             xdg-utils \
-            wget
+            libgl1-mesa-dri \
+            libgl1-mesa-glx \
+            libegl1-mesa \
+            mesa-utils \
+            libpulse0 \
+            alsa-utils \
+            alsa-plugins \
+            pulseaudio \
+            libvulkan1 \
+            mesa-vulkan-drivers \
+            libglu1-mesa
+
           echo "Installed Node.js version: $(node -v) and npm version: $(npm -v)"
 
       - name: Install and Connect NordVPN
@@ -117,11 +133,9 @@ jobs:
           const StealthPlugin = require('puppeteer-extra-plugin-stealth');
           const fs = require('fs');
           puppeteer.use(StealthPlugin());
-
           function sleep(ms) {
               return new Promise(resolve => setTimeout(resolve, ms));
           }
-
           async function safeScreenshot(page, path) {
               try {
                   await page.screenshot({ path });
@@ -130,7 +144,6 @@ jobs:
                   console.error(`Failed to take screenshot ${path}: ${err.message}`);
               }
           }
-
           async function acceptCookies(page) {
               try {
                   const buttonHandle = await page.evaluateHandle(() => {
@@ -153,7 +166,6 @@ jobs:
                   console.error("Error while accepting cookies:", e.message);
               }
           }
-
           async function checkPublicIP(browser) {
               const tempPage = await browser.newPage();
               try {
@@ -166,7 +178,6 @@ jobs:
                   await tempPage.close();
               }
           }
-
           async function visitYouTube(videoUrl) {
               console.log('Launching browser without proxy (using VPN connection)...');
               const browser = await puppeteer.launch({
@@ -181,11 +192,8 @@ jobs:
                       '--disable-gpu'
                   ]
               });
-
-              // Check public IP before navigating
               console.log("Checking public IP before visiting video...");
               await checkPublicIP(browser);
-
               const page = await browser.newPage();
               try {
                   const maxRetries = 3;
@@ -211,11 +219,8 @@ jobs:
                   }
                   await safeScreenshot(page, `./screenshots/youtube_loaded_${Date.now()}.png`);
                   await acceptCookies(page);
-
-                  // Check public IP after navigation
                   console.log("Checking public IP after visiting video...");
                   await checkPublicIP(browser);
-
                   console.log("Checking if video is already playing...");
                   const isPlaying = await page.evaluate(() => {
                       const video = document.querySelector("video");
@@ -268,12 +273,10 @@ jobs:
                   await browser.close();
               }
           }
-
           async function run() {
               const videoUrl = process.argv[2] || "https://www.youtube.com/watch?v=Km-HyBwxcR8";
               await visitYouTube(videoUrl);
           }
-
           run().catch(error => {
               console.error("Script failed:", error.message);
           });
