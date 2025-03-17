@@ -11,11 +11,16 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
+      - name: Create custom resolv.conf in /tmp with less restrictions
+        run: |
+          # Create a minimal resolv.conf file in a location with looser permissions.
+          echo "nameserver 8.8.8.8" > /tmp/custom_resolv.conf
+
       - name: Run NordVPN using manual repository approach with service start and exit code check
         run: |
           # Disable immediate exit on error in the host shell so we can capture the exit code.
           set +e
-          docker run --rm --privileged --security-opt seccomp=unconfined --security-opt apparmor=unconfined ubuntu:latest bash -c '
+          docker run --rm --privileged -v /tmp/custom_resolv.conf:/etc/resolv.conf:ro ubuntu:latest bash -c '
             set -e
             export DEBIAN_FRONTEND=noninteractive
             echo "Installing base dependencies..."
