@@ -1,7 +1,8 @@
 name: Test NordVPN Connection (Docker)
 
 on:
-  workflow_dispatch:
+  push:  # Runs automatically on each commit
+  workflow_dispatch:  # Also allows manual triggering
 
 jobs:
   test-nordvpn:
@@ -14,18 +15,17 @@ jobs:
         run: |
           docker run --rm --privileged ubuntu:latest bash -c '
             set -e
-
+            
             # Set non-interactive mode for package installation
             export DEBIAN_FRONTEND=noninteractive
-
             # Install dependencies without confirmation prompts
             apt update && apt install -y --no-install-recommends curl wget sudo iproute2 apt-transport-https
 
             # Install NordVPN using the official script
             wget -qO - https://downloads.nordcdn.com/apps/linux/install.sh | sudo bash
 
-            # Force APT to install NordVPN **without prompts**
-            sudo apt update && sudo apt install -y --no-install-recommends nordvpn <<< "Y"
+            # Update package lists and install NordVPN
+            sudo apt update && sudo apt install -y nordvpn
 
             # Log in using NordVPN token
             sudo nordvpn login --token "${{ secrets.NORDVPN_TOKEN }}"
