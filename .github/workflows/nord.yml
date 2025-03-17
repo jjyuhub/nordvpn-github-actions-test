@@ -1,4 +1,4 @@
-name: Test NordVPN Connection
+name: Test NordVPN Connection (Docker)
 
 on:
   workflow_dispatch:
@@ -10,22 +10,15 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
-      - name: Install NordVPN CLI
+      - name: Run NordVPN inside Docker
         run: |
-          wget -qO - https://downloads.nordcdn.com/apps/linux/install.sh | sudo bash
-          sudo groupadd nordvpn || true
-          sudo usermod -aG nordvpn $USER
-
-      - name: Log in to NordVPN using Token
-        run: |
-          sudo nordvpn login --token "${{ secrets.NORDVPN_TOKEN }}"
-          sudo nordvpn set technology nordlynx
-
-      - name: Connect to NordVPN
-        run: |
-          sudo nordvpn connect
-          sleep 10 # Wait for connection to establish
-
-      - name: Get and Print IP Address
-        run: |
-          curl -s https://api64.ipify.org
+          docker run --rm --privileged ubuntu:latest bash -c '
+            set -e
+            apt update && apt install -y curl wget sudo
+            wget -qO - https://downloads.nordcdn.com/apps/linux/install.sh | sudo bash
+            nordvpn login --token "${{ secrets.NORDVPN_TOKEN }}"
+            nordvpn set technology nordlynx
+            nordvpn connect
+            sleep 10
+            echo "Connected IP: $(curl -s https://api64.ipify.org)"
+          '
