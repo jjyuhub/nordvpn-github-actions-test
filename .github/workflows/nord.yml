@@ -112,6 +112,9 @@ jobs:
           const puppeteer = require('puppeteer-extra');
           const StealthPlugin = require('puppeteer-extra-plugin-stealth');
           const fs = require('fs');
+          const { execSync } = require('child_process');
+          
+          // Use stealth plugin to avoid detection
           puppeteer.use(StealthPlugin());
           function sleep(ms) {
               return new Promise(resolve => setTimeout(resolve, ms));
@@ -209,29 +212,14 @@ jobs:
           async function reconnectVPN() {
               console.log("Reconnecting to a different VPN server...");
               try {
-                  await new Promise((resolve, reject) => {
-                      const cmd = "sudo nordvpn disconnect && sleep 5 && sudo nordvpn connect";
-                      require('child_process').exec(cmd, (error, stdout, stderr) => {
-                          if (error) {
-                              console.error("VPN reconnection error:", error.message);
-                              reject(error);
-                              return;
-                          }
-                          console.log("VPN reconnection output:", stdout);
-                          if (stderr) console.error("VPN reconnection stderr:", stderr);
-                          resolve();
-                      });
-                  });
-                  
-                  // Wait for connection to stabilize
+                  // Use synchronous execution to ensure VPN reconnects before continuing
+                  execSync("sudo nordvpn disconnect", { stdio: 'inherit' });
+                  await sleep(5000);
+                  execSync("sudo nordvpn connect", { stdio: 'inherit' });
                   await sleep(10000);
                   
                   // Check new IP
-                  const newIP = await new Promise((resolve) => {
-                      require('child_process').exec("curl -s https://api64.ipify.org", (error, stdout) => {
-                          resolve(stdout.trim() || "Unknown");
-                      });
-                  });
+                  const newIP = execSync("curl -s https://api64.ipify.org").toString().trim();
                   console.log("New VPN IP:", newIP);
                   return true;
               } catch (error) {
@@ -256,40 +244,42 @@ jobs:
               });
               console.log("Checking public IP before visiting video...");
               await checkPublicIP(browser);
-              // Clear all cookies and browser cache before starting
-              const context = browser.defaultBrowserContext();
-              await context.clearPermissionOverrides();
+              // Clear all cookies and cache before starting
+              let page = await browser.newPage();
               
-              // Create a new incognito browser context for isolation
-              const incognitoContext = await browser.createIncognitoBrowserContext();
-              let page = await incognitoContext.newPage();
-              
-              // Clear browser cache
-              await page._client.send('Network.clearBrowserCache');
-              await page._client.send('Network.clearBrowserCookies');
+              // Use CDP commands directly to clear cache and cookies
               try {
-                  // Additional page setup for privacy
+                await page._client.send('Network.clearBrowserCache');
+                await page._client.send('Network.clearBrowserCookies');
+              } catch (e) {
+                console.log("Note: Advanced browser cache clearing not available, using standard methods");
+              }
+              try {
+                  // Additional page setup for enhanced privacy
                   await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36');
                   
-                  // Disable cache for this page
+                  // Set cookies to be deleted at the end of session
                   await page.setCacheEnabled(false);
                   
-                  // Additional privacy settings
+                  // Alternative method to clear cookies before navigating
+                  const cookies = await page.cookies();
+                  if (cookies.length > 0) {
+                    await page.deleteCookie(...cookies);
+                  }
+                  
+                  // Set additional privacy settings via script
                   await page.evaluateOnNewDocument(() => {
                     // Overwrite the navigator properties
                     Object.defineProperty(navigator, 'webdriver', {
                       get: () => false,
                     });
                     
-                    // Prevent fingerprinting
-                    navigator.mediaDevices = undefined;
-                    
-                    // Clear localStorage and sessionStorage on page load
-                    if (window.localStorage) {
-                      window.localStorage.clear();
-                    }
-                    if (window.sessionStorage) {
-                      window.sessionStorage.clear();
+                    // Clear storage when possible
+                    try {
+                      if (window.localStorage) window.localStorage.clear();
+                      if (window.sessionStorage) window.sessionStorage.clear();
+                    } catch (e) {
+                      // Some environments restrict storage access
                     }
                   });
 
@@ -358,13 +348,18 @@ jobs:
                                           '--disable-gpu'
                                       ]
                                   });
-                                  // Create a new incognito browser context for isolation
-                                  const incognitoContext = await browser.createIncognitoBrowserContext();
-                                  page = await incognitoContext.newPage();
+                                  // Create a new page and clear cookies
+                                  page = await browser.newPage();
                                   
-                                  // Clear any potential cookies or cache
-                                  await page._client.send('Network.clearBrowserCache');
-                                  await page._client.send('Network.clearBrowserCookies');
+                                  // Try to clear cookies and cache if supported
+                                  try {
+                                    await page._client.send('Network.clearBrowserCache');
+                                    await page._client.send('Network.clearBrowserCookies');
+                                  } catch (e) {
+                                    console.log("Note: Using standard cookie clearing method");
+                                    const client = await page.target().createCDPSession();
+                                    await client.send('Network.clearBrowserCookies');
+                                  }
                                   continue; // Skip the rest and retry with new connection
                               } else {
                                   throw new Error("Exceeded maximum reconnect attempts. Unable to bypass sign-in detection.");
@@ -469,10 +464,7 @@ jobs:
                   }
                   await safeScreenshot(page, "./screenshots/failure_screenshot.png");
               } finally {
-                  // Close incognito context which also clears all associated cookies and storage
-                  if (incognitoContext) {
-                    await incognitoContext.close();
-                  }
+                  // Close the browser which also closes all pages and clears session data
                   console.log("Closing browser...");
                   await browser.close();
               }
