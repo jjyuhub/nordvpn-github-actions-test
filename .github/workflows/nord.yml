@@ -5,65 +5,58 @@ on:
   workflow_dispatch:  # Also allows manual triggering
 
 jobs:
-  test-nordvpn-official:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout Repository
-        uses: actions/checkout@v4
-
-      - name: Run NordVPN using official script approach
-        run: |
-          docker run --rm --privileged ubuntu:latest bash -c '
-            set -e
-            export DEBIAN_FRONTEND=noninteractive
-
-            # Update packages and install dependencies (including lsb-release)
-            apt update && apt install -y --no-install-recommends curl wget sudo iproute2 apt-transport-https lsb-release
-
-            # Run the official NordVPN install script
-            wget -qO - https://downloads.nordcdn.com/apps/linux/install.sh | sudo bash
-
-            # Update package lists and install NordVPN
-            sudo apt update && sudo apt install -y nordvpn
-
-            # Log in using NordVPN token, configure, and connect
-            sudo nordvpn login --token "${{ secrets.NORDVPN_TOKEN }}"
-            sudo nordvpn set technology nordlynx
-            sudo nordvpn connect
-            sleep 10
-
-            # Retrieve and display the public IP address
-            echo "Connected IP: $(curl -s https://api64.ipify.org)"
-          '
-
   test-nordvpn-manual:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
-      - name: Run NordVPN using manual repository approach
+      - name: Run NordVPN using manual repository approach with service start
         run: |
           docker run --rm --privileged ubuntu:latest bash -c '
             set -e
             export DEBIAN_FRONTEND=noninteractive
 
-            # Update packages and install basic dependencies
-            apt update && apt install -y --no-install-recommends curl wget sudo iproute2 apt-transport-https
+            echo "Installing base dependencies..."
+            apt update && apt install -y --no-install-recommends curl wget sudo iproute2 apt-transport-https gnupg ca-certificates
 
-            # Manually add the NordVPN repository and its GPG key
+            echo "Adding NordVPN repository manually..."
             echo "deb https://repo.nordvpn.com/deb/nordvpn/debian stable main" | sudo tee /etc/apt/sources.list.d/nordvpn.list
-            wget -qnc https://repo.nordvpn.com/gpg/nordvpn_public.asc -O- | sudo apt-key add -
 
-            # Update package lists and install NordVPN
-            sudo apt update && sudo apt install -y nordvpn
+            echo "Downloading NordVPN GPG key with wget..."
+            if ! wget -q -O /tmp/nordvpn_public.asc https://repo.nordvpn.com/gpg/nordvpn_public.asc; then
+              echo "wget failed, trying with curl..."
+              curl -fsSL https://repo.nordvpn.com/gpg/nordvpn_public.asc -o /tmp/nordvpn_public.asc
+            fi
 
-            # Log in using NordVPN token, configure, and connect
+            if [ ! -s /tmp/nordvpn_public.asc ]; then
+              echo "Failed to download a valid NordVPN GPG key. Exiting."
+              exit 1
+            fi
+
+            echo "Importing GPG key using dearmor..."
+            sudo gpg --dearmor -o /etc/apt/trusted.gpg.d/nordvpn.gpg /tmp/nordvpn_public.asc
+
+            echo "Updating package lists..."
+            sudo apt update
+
+            echo "Attempting to install the nordvpn package..."
+            if sudo apt install -y nordvpn; then
+              echo "NordVPN package installed successfully."
+            else
+              echo "Failed to install nordvpn package. Exiting."
+              exit 1
+            fi
+
+            echo "Starting NordVPN background service..."
+            sudo /etc/init.d/nordvpn start || { echo "Failed to start NordVPN service."; exit 1; }
+            sleep 5
+
+            echo "Logging in and connecting..."
             sudo nordvpn login --token "${{ secrets.NORDVPN_TOKEN }}"
             sudo nordvpn set technology nordlynx
             sudo nordvpn connect
             sleep 10
 
-            # Retrieve and display the public IP address
             echo "Connected IP: $(curl -s https://api64.ipify.org)"
           '
