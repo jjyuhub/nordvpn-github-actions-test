@@ -56,11 +56,12 @@ jobs:
             libxrandr2 \
             libxshmfence1 \
             libxss1 \
-            libasound2 \
+            libasound2t64 \
             libpulse0 \
             libxkbcommon0 \
             xdg-utils \
-            lsb-release
+            lsb-release \
+            libasound2-plugins
 
           echo "Installed Node.js version: $(node -v) and npm version: $(npm -v)"
 
