@@ -15,15 +15,15 @@ jobs:
           wget -qO - https://downloads.nordcdn.com/apps/linux/install.sh | sudo bash
           sudo usermod -aG nordvpn $USER
 
-      - name: Log in to NordVPN
+      - name: Log in to NordVPN using Token
         run: |
-          echo "${{ secrets.NORDVPN_PASSWORD }}" | nordvpn login --username "${{ secrets.NORDVPN_USERNAME }}" --password-stdin
+          nordvpn login --token "${{ secrets.NORDVPN_TOKEN }}"
           nordvpn set technology nordlynx
 
       - name: Connect to NordVPN
         run: |
           nordvpn connect
-          sleep 10 # Wait for the connection to stabilize
+          sleep 10 # Wait for connection to establish
 
       - name: Get and Print IP Address
         run: |
