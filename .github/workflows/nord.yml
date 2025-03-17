@@ -15,7 +15,7 @@ jobs:
         run: |
           # Disable immediate exit on error in the host shell so we can capture the exit code.
           set +e
-          docker run --rm --privileged --security-opt seccomp=unconfined ubuntu:latest bash -c '
+          docker run --rm --privileged --security-opt seccomp=unconfined --security-opt apparmor=unconfined ubuntu:latest bash -c '
             set -e
             export DEBIAN_FRONTEND=noninteractive
             echo "Installing base dependencies..."
