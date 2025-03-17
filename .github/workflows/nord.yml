@@ -29,7 +29,9 @@ jobs:
           curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
           apt install -y nodejs
           echo "Installing required dependencies for Puppeteer (Chromium)..."
-          apt install -y libatk1.0-0 libatk-bridge2.0-0 libcups2 libdbus-1-3 libgdk-pixbuf2.0-0 libnspr4 libnss3 libx11-xcb1 libxcomposite1 libxdamage1 libxrandr2 libgbm1 libpango-1.0-0 libxshmfence1 libglib2.0-0
+          apt install -y libatk1.0-0 libatk-bridge2.0-0 libcups2 libdbus-1-3 libgdk-pixbuf2.0-0 \
+            libnspr4 libnss3 libx11-xcb1 libxcomposite1 libxdamage1 libxrandr2 libgbm1 \
+            libpango-1.0-0 libxshmfence1 libglib2.0-0 libxfixes3 libxkbcommon0
           echo "Installed Node.js version: $(node -v) and npm version: $(npm -v)"
 
       - name: Install and Connect NordVPN
