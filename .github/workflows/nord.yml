@@ -1,0 +1,30 @@
+name: Test NordVPN Connection
+
+on:
+  workflow_dispatch:
+
+jobs:
+  test-nordvpn:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Install NordVPN CLI
+        run: |
+          wget -qO - https://downloads.nordcdn.com/apps/linux/install.sh | sudo bash
+          sudo usermod -aG nordvpn $USER
+
+      - name: Log in to NordVPN
+        run: |
+          echo "${{ secrets.NORDVPN_PASSWORD }}" | nordvpn login --username "${{ secrets.NORDVPN_USERNAME }}" --password-stdin
+          nordvpn set technology nordlynx
+
+      - name: Connect to NordVPN
+        run: |
+          nordvpn connect
+          sleep 10 # Wait for the connection to stabilize
+
+      - name: Get and Print IP Address
+        run: |
+          curl -s https://api64.ipify.org
