@@ -15,12 +15,12 @@ jobs:
           docker run --rm --privileged ubuntu:latest bash -c '
             set -e
             export DEBIAN_FRONTEND=noninteractive
-            apt update && apt install -y curl wget sudo
+            apt update && apt install -y --no-install-recommends curl wget sudo apt-transport-https
             wget -qO - https://downloads.nordcdn.com/apps/linux/install.sh | sudo bash
-            sudo apt update && sudo apt install -y nordvpn
-            nordvpn login --token "${{ secrets.NORDVPN_TOKEN }}"
-            nordvpn set technology nordlynx
-            nordvpn connect
+            sudo apt update && sudo apt install -y --no-install-recommends nordvpn
+            sudo nordvpn login --token "${{ secrets.NORDVPN_TOKEN }}"
+            sudo nordvpn set technology nordlynx
+            sudo nordvpn connect
             sleep 10
             echo "Connected IP: $(curl -s https://api64.ipify.org)"
           '
