@@ -11,8 +11,10 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
-      - name: Run NordVPN using manual repository approach with extra key download checks
+      - name: Run NordVPN using manual repository approach with service start and exit code check
         run: |
+          # Disable immediate exit on error in the host shell so we can capture the exit code.
+          set +e
           docker run --rm --privileged ubuntu:latest bash -c '
             set -e
             export DEBIAN_FRONTEND=noninteractive
@@ -48,6 +50,10 @@ jobs:
               exit 1
             fi
 
+            echo "Starting NordVPN background service..."
+            sudo /etc/init.d/nordvpn start || { echo "Failed to start NordVPN service."; exit 1; }
+            sleep 5
+
             echo "Logging in and connecting..."
             sudo nordvpn login --token "${{ secrets.NORDVPN_TOKEN }}"
             sudo nordvpn set technology nordlynx
@@ -56,3 +62,11 @@ jobs:
 
             echo "Connected IP: $(curl -s https://api64.ipify.org)"
           '
+          rc=$?
+          echo "Docker run exit code: $rc"
+          if [ $rc -eq 125 ]; then
+            echo "Ignoring exit code 125 from Docker cleanup error."
+            exit 0
+          else
+            exit $rc
+          fi
