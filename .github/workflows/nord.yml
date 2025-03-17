@@ -158,21 +158,28 @@ jobs:
                   await tempPage.close();
               }
           }
-          async function checkForSignInMessage(page) {
-              const signInTexts = [
+          async function checkForBlockingMessages(page) {
+              const blockingTexts = [
+                  // Sign in messages
                   "Sign in to confirm",
                   "Confirm your identity",
                   "Confirm it's you",
                   "Verify your identity",
-                  "Sign in to continue"
+                  "Sign in to continue",
+                  // Error messages
+                  "Something went wrong",
+                  "An error occurred",
+                  "This video is unavailable",
+                  "This video is not available",
+                  "Please try again later"
               ];
               
               try {
                   const pageText = await page.evaluate(() => document.body.innerText);
-                  for (const text of signInTexts) {
+                  for (const text of blockingTexts) {
                       if (pageText.includes(text)) {
                           console.log("=".repeat(50));
-                          console.log(`SIGN IN MESSAGE DETECTED: "${text}"`);
+                          console.log(`BLOCKING MESSAGE DETECTED: "${text}"`);
                           console.log("Full context of the message:");
                           
                           // Get more context around the message
@@ -189,13 +196,13 @@ jobs:
                           
                           console.log(textContext);
                           console.log("=".repeat(50));
-                          return true;
+                          return { detected: true, message: text };
                       }
                   }
-                  return false;
+                  return { detected: false, message: "" };
               } catch (error) {
-                  console.error("Error checking for sign-in message:", error.message);
-                  return false;
+                  console.error("Error checking for blocking messages:", error.message);
+                  return { detected: false, message: "" };
               }
           }
 
@@ -287,11 +294,11 @@ jobs:
                               throw new Error("Navigation failed after maximum retries.");
                           }
                           
-                          // Check for sign-in messages
-                          const signInDetected = await checkForSignInMessage(page);
-                          if (signInDetected) {
-                              console.log("Sign-in message detected. Taking screenshot...");
-                              await safeScreenshot(page, `./screenshots/sign_in_detected_${Date.now()}.png`);
+                          // Check for blocking messages
+                          const blockingCheck = await checkForBlockingMessages(page);
+                          if (blockingCheck.detected) {
+                              console.log(`Blocking message detected: "${blockingCheck.message}". Taking screenshot...`);
+                              await safeScreenshot(page, `./screenshots/blocking_message_${Date.now()}.png`);
                               
                               reconnectAttempt++;
                               if (reconnectAttempt <= maxReconnectAttempts) {
@@ -366,10 +373,46 @@ jobs:
                   } else {
                       console.log("Video is already playing. Skipping Play button click.");
                   }
-                  console.log("Watching video for 41 seconds with periodic screenshots...");
+                  console.log("Watching video for 41 seconds with periodic screenshots and error checking...");
+                  let reconnectDuringPlayback = false;
+                  
                   for (let t = 5; t <= 41; t += 5) {
                       await sleep(5000);
                       await safeScreenshot(page, `./screenshots/youtube_watch_${t}s_${Date.now()}.png`);
+                      
+                      // Check for blocking messages during video playback
+                      const playbackCheck = await checkForBlockingMessages(page);
+                      if (playbackCheck.detected) {
+                          console.log(`Blocking message detected during playback: "${playbackCheck.message}"`);
+                          await safeScreenshot(page, `./screenshots/playback_error_${Date.now()}.png`);
+                          reconnectDuringPlayback = true;
+                          break;
+                      }
+                      
+                      // Check if video is still playing
+                      const isPlaying = await page.evaluate(() => {
+                          const video = document.querySelector("video");
+                          return video && !video.paused && !video.ended && video.readyState > 2;
+                      });
+                      
+                      if (!isPlaying) {
+                          console.log("Video is no longer playing. Possible error condition.");
+                          reconnectDuringPlayback = true;
+                          break;
+                      }
+                  }
+                  
+                  if (reconnectDuringPlayback) {
+                      console.log("Error during playback. Reconnecting VPN and retrying...");
+                      await browser.close();
+                      const reconnected = await reconnectVPN();
+                      if (!reconnected) {
+                          throw new Error("Failed to reconnect VPN after playback error.");
+                      }
+                      
+                      // Restart the whole process with the same video URL
+                      // This effectively serves as our retry mechanism
+                      return await visitYouTube(videoUrl);
                   }
                   await safeScreenshot(page, `./screenshots/youtube_finished_${Date.now()}.png`);
                   const finalHtml = await page.content();
