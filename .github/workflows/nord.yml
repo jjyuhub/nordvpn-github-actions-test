@@ -289,8 +289,8 @@ jobs:
               }
               try {
                   // Additional page setup for enhanced privacy
-                  await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36');
-                  console.log("Using Chrome 126 user agent (May 2025)");
+                  await page.setUserAgent('Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36');
+                  console.log("Using Chrome 133 user agent (March 2025)");
                   
                   // Set cookies to be deleted at the end of session
                   await page.setCacheEnabled(false);
