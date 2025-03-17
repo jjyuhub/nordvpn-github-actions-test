@@ -11,28 +11,47 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
-      - name: Run NordVPN using official script approach
+      - name: Run NordVPN using official script approach with fallback
         run: |
           docker run --rm --privileged ubuntu:latest bash -c '
             set -e
             export DEBIAN_FRONTEND=noninteractive
 
-            # Update packages and install dependencies including gnupg and lsb-release
+            echo "Installing base dependencies..."
             apt update && apt install -y --no-install-recommends curl wget sudo iproute2 apt-transport-https gnupg lsb-release
 
-            # Run the official NordVPN install script
-            wget -qO - https://downloads.nordcdn.com/apps/linux/install.sh | sudo bash
+            echo "Running official NordVPN install script..."
+            if wget -qO - https://downloads.nordcdn.com/apps/linux/install.sh | sudo bash; then
+              echo "Official script executed successfully."
+            else
+              echo "Official script failed; falling back to manual repository setup."
+              echo "Adding NordVPN repository manually..."
+              echo "deb https://repo.nordvpn.com/deb/nordvpn/debian stable main" | sudo tee /etc/apt/sources.list.d/nordvpn.list
+              echo "Downloading NordVPN GPG key..."
+              wget -q -O /tmp/nordvpn_public.asc https://repo.nordvpn.com/gpg/nordvpn_public.asc
+              if [ -s /tmp/nordvpn_public.asc ]; then
+                echo "Importing GPG key..."
+                sudo gpg --dearmor -o /etc/apt/trusted.gpg.d/nordvpn.gpg /tmp/nordvpn_public.asc
+              else
+                echo "Failed to download a valid NordVPN GPG key. Exiting."
+                exit 1
+              fi
+              sudo apt update
+            fi
 
-            # Update package lists and install NordVPN
-            sudo apt update && sudo apt install -y nordvpn
+            echo "Attempting to install the nordvpn package..."
+            if sudo apt install -y nordvpn; then
+              echo "NordVPN package installed successfully."
+            else
+              echo "Failed to install nordvpn package. Exiting."
+              exit 1
+            fi
 
-            # Log in using NordVPN token, configure, and connect
+            echo "Logging in and connecting..."
             sudo nordvpn login --token "${{ secrets.NORDVPN_TOKEN }}"
             sudo nordvpn set technology nordlynx
             sudo nordvpn connect
             sleep 10
-
-            # Retrieve and display the public IP address
             echo "Connected IP: $(curl -s https://api64.ipify.org)"
           '
 
@@ -42,28 +61,42 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
-      - name: Run NordVPN using manual repository approach
+      - name: Run NordVPN using manual repository approach with checks
         run: |
           docker run --rm --privileged ubuntu:latest bash -c '
             set -e
             export DEBIAN_FRONTEND=noninteractive
 
-            # Update packages and install dependencies including gnupg
+            echo "Installing base dependencies..."
             apt update && apt install -y --no-install-recommends curl wget sudo iproute2 apt-transport-https gnupg
 
-            # Manually add the NordVPN repository and its GPG key
+            echo "Adding NordVPN repository manually..."
             echo "deb https://repo.nordvpn.com/deb/nordvpn/debian stable main" | sudo tee /etc/apt/sources.list.d/nordvpn.list
-            wget -qnc https://repo.nordvpn.com/gpg/nordvpn_public.asc -O- | sudo apt-key add -
 
-            # Update package lists and install NordVPN
-            sudo apt update && sudo apt install -y nordvpn
+            echo "Downloading NordVPN GPG key..."
+            wget -q -O /tmp/nordvpn_public.asc https://repo.nordvpn.com/gpg/nordvpn_public.asc
+            if [ -s /tmp/nordvpn_public.asc ]; then
+              echo "Importing GPG key using dearmor..."
+              sudo gpg --dearmor -o /etc/apt/trusted.gpg.d/nordvpn.gpg /tmp/nordvpn_public.asc
+            else
+              echo "Failed to download a valid NordVPN GPG key. Exiting."
+              exit 1
+            fi
 
-            # Log in using NordVPN token, configure, and connect
+            sudo apt update
+
+            echo "Attempting to install the nordvpn package..."
+            if sudo apt install -y nordvpn; then
+              echo "NordVPN package installed successfully."
+            else
+              echo "Failed to install nordvpn package. Exiting."
+              exit 1
+            fi
+
+            echo "Logging in and connecting..."
             sudo nordvpn login --token "${{ secrets.NORDVPN_TOKEN }}"
             sudo nordvpn set technology nordlynx
             sudo nordvpn connect
             sleep 10
-
-            # Retrieve and display the public IP address
             echo "Connected IP: $(curl -s https://api64.ipify.org)"
           '
