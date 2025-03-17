@@ -256,8 +256,43 @@ jobs:
               });
               console.log("Checking public IP before visiting video...");
               await checkPublicIP(browser);
-              let page = await browser.newPage();
+              // Clear all cookies and browser cache before starting
+              const context = browser.defaultBrowserContext();
+              await context.clearPermissionOverrides();
+              
+              // Create a new incognito browser context for isolation
+              const incognitoContext = await browser.createIncognitoBrowserContext();
+              let page = await incognitoContext.newPage();
+              
+              // Clear browser cache
+              await page._client.send('Network.clearBrowserCache');
+              await page._client.send('Network.clearBrowserCookies');
               try {
+                  // Additional page setup for privacy
+                  await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36');
+                  
+                  // Disable cache for this page
+                  await page.setCacheEnabled(false);
+                  
+                  // Additional privacy settings
+                  await page.evaluateOnNewDocument(() => {
+                    // Overwrite the navigator properties
+                    Object.defineProperty(navigator, 'webdriver', {
+                      get: () => false,
+                    });
+                    
+                    // Prevent fingerprinting
+                    navigator.mediaDevices = undefined;
+                    
+                    // Clear localStorage and sessionStorage on page load
+                    if (window.localStorage) {
+                      window.localStorage.clear();
+                    }
+                    if (window.sessionStorage) {
+                      window.sessionStorage.clear();
+                    }
+                  });
+
                   const maxRetries = 3;
                   let navigated = false;
                   
@@ -294,7 +329,7 @@ jobs:
                               throw new Error("Navigation failed after maximum retries.");
                           }
                           
-                          // Check for blocking messages
+                                    // Check for blocking messages
                           const blockingCheck = await checkForBlockingMessages(page);
                           if (blockingCheck.detected) {
                               console.log(`Blocking message detected: "${blockingCheck.message}". Taking screenshot...`);
@@ -323,7 +358,13 @@ jobs:
                                           '--disable-gpu'
                                       ]
                                   });
-                                  page = await browser.newPage();
+                                  // Create a new incognito browser context for isolation
+                                  const incognitoContext = await browser.createIncognitoBrowserContext();
+                                  page = await incognitoContext.newPage();
+                                  
+                                  // Clear any potential cookies or cache
+                                  await page._client.send('Network.clearBrowserCache');
+                                  await page._client.send('Network.clearBrowserCookies');
                                   continue; // Skip the rest and retry with new connection
                               } else {
                                   throw new Error("Exceeded maximum reconnect attempts. Unable to bypass sign-in detection.");
@@ -428,6 +469,10 @@ jobs:
                   }
                   await safeScreenshot(page, "./screenshots/failure_screenshot.png");
               } finally {
+                  // Close incognito context which also clears all associated cookies and storage
+                  if (incognitoContext) {
+                    await incognitoContext.close();
+                  }
                   console.log("Closing browser...");
                   await browser.close();
               }
