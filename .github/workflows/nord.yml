@@ -17,28 +17,31 @@ jobs:
             
             # Set non-interactive mode for package installation
             export DEBIAN_FRONTEND=noninteractive
-            
+
             # Update package lists and install required dependencies
             apt update
-            apt install -y --no-install-recommends apt-utils dialog
+            apt install -y --no-install-recommends curl wget sudo iproute2 gnupg apt-transport-https ca-certificates
+
+            # Add NordVPN repository and its GPG key
+            wget -qO - https://repo.nordvpn.com/gpg/nordvpn_public.asc | sudo tee /usr/share/keyrings/nordvpn-keyring.gpg > /dev/null
+            echo "deb [signed-by=/usr/share/keyrings/nordvpn-keyring.gpg] https://repo.nordvpn.com/deb/nordvpn/debian stable main" | sudo tee /etc/apt/sources.list.d/nordvpn.list
             
-            # Install necessary dependencies (bypass prompts)
-            apt install -y --no-install-recommends curl wget sudo iproute2 gnupg
-            
-            # Add NordVPN repository and install NordVPN
-            wget -qO - https://downloads.nordcdn.com/apps/linux/install.sh | sudo bash
-            sudo apt update && sudo apt install -y --no-install-recommends nordvpn
-            
+            # Update package lists again after adding NordVPN repository
+            apt update
+
+            # Install NordVPN
+            apt install -y --no-install-recommends nordvpn
+
             # Login using NordVPN token
             sudo nordvpn login --token "${{ secrets.NORDVPN_TOKEN }}"
-            
+
             # Configure NordVPN
             sudo nordvpn set technology nordlynx
-            
+
             # Connect to NordVPN
             sudo nordvpn connect
             sleep 10
-            
+
             # Retrieve public IP and display it
             echo "Connected IP: $(curl -s https://api64.ipify.org)"
           '
