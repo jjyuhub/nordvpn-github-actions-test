@@ -14,8 +14,10 @@ jobs:
         run: |
           docker run --rm --privileged ubuntu:latest bash -c '
             set -e
+            export DEBIAN_FRONTEND=noninteractive
             apt update && apt install -y curl wget sudo
             wget -qO - https://downloads.nordcdn.com/apps/linux/install.sh | sudo bash
+            sudo apt update && sudo apt install -y nordvpn
             nordvpn login --token "${{ secrets.NORDVPN_TOKEN }}"
             nordvpn set technology nordlynx
             nordvpn connect
