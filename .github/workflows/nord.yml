@@ -35,8 +35,6 @@ jobs:
             sudo gpg --dearmor -o /etc/apt/trusted.gpg.d/nordvpn.gpg /tmp/nordvpn_public.asc
             echo "Updating package lists..."
             sudo apt update
-            sudo groupadd nordvpn || true
-            sudo usermod -aG nordvpn $USER
             echo "Attempting to install the nordvpn package..."
             if sudo apt install -y nordvpn; then
               echo "NordVPN package installed successfully."
