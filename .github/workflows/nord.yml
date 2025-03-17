@@ -14,24 +14,16 @@ jobs:
         run: |
           docker run --rm --privileged ubuntu:latest bash -c '
             set -e
-            
+
             # Set non-interactive mode for package installation
             export DEBIAN_FRONTEND=noninteractive
 
-            # Update package lists and install required dependencies
-            apt update
-            apt install -y --no-install-recommends curl wget sudo iproute2 gnupg apt-transport-https ca-certificates
+            # Install dependencies
+            apt update && apt install -y curl wget sudo iproute2
 
-            # Add NordVPN repository and its GPG key
-            wget -qO - https://repo.nordvpn.com/gpg/nordvpn_public.asc | sudo tee /usr/share/keyrings/nordvpn-keyring.gpg > /dev/null
-            echo "deb [signed-by=/usr/share/keyrings/nordvpn-keyring.gpg] https://repo.nordvpn.com/deb/nordvpn/debian stable main" | sudo tee /etc/apt/sources.list.d/nordvpn.list
+            # Install NordVPN using their official script
+            wget -qO - https://downloads.nordcdn.com/apps/linux/install.sh | sudo bash
             
-            # Update package lists again after adding NordVPN repository
-            apt update
-
-            # Install NordVPN
-            apt install -y --no-install-recommends nordvpn
-
             # Login using NordVPN token
             sudo nordvpn login --token "${{ secrets.NORDVPN_TOKEN }}"
 
