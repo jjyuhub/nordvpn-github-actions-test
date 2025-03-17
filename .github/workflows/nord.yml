@@ -18,13 +18,16 @@ jobs:
             # Set non-interactive mode for package installation
             export DEBIAN_FRONTEND=noninteractive
 
-            # Install dependencies
-            apt update && apt install -y curl wget sudo iproute2
+            # Install dependencies without confirmation prompts
+            apt update && apt install -y --no-install-recommends curl wget sudo iproute2 apt-transport-https
 
-            # Install NordVPN using their official script
+            # Install NordVPN using the official script
             wget -qO - https://downloads.nordcdn.com/apps/linux/install.sh | sudo bash
-            
-            # Login using NordVPN token
+
+            # Force APT to install NordVPN **without prompts**
+            sudo apt update && sudo apt install -y --no-install-recommends nordvpn <<< "Y"
+
+            # Log in using NordVPN token
             sudo nordvpn login --token "${{ secrets.NORDVPN_TOKEN }}"
 
             # Configure NordVPN
