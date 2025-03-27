@@ -34,7 +34,7 @@ jobs:
           curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
           apt install -y nodejs
 
-          echo "Installing Chromium dependencies for Puppeteer..."
+          echo "Installing Chromium dependencies..."
           apt install -y \
             fonts-liberation \
             libatk-bridge2.0-0 \
@@ -99,16 +99,16 @@ jobs:
           sleep 10
           echo "VPN Connected. Public IP: $(curl -s https://api64.ipify.org)"
 
-      - name: Install Rumble Visit Dependencies
+      - name: Install Puppeteer Dependencies
         run: |
-          echo "Initializing Node project and installing Puppeteer dependencies..."
+          echo "Initializing Node.js project and installing Puppeteer modules..."
           npm init -y
           npm install puppeteer puppeteer-core puppeteer-extra puppeteer-extra-plugin-stealth
 
       - name: Create Puppeteer Script for Rumble
         run: |
           mkdir -p scripts screenshots
-          cat > scripts/rumble-visit.js << 'EOL'
+          cat > scripts/rumble-visit.js << 'EOF'
           const puppeteer = require('puppeteer-extra');
           const StealthPlugin = require('puppeteer-extra-plugin-stealth');
           const fs = require('fs');
@@ -123,31 +123,30 @@ jobs:
           async function safeScreenshot(page, path) {
               try {
                   await page.screenshot({ path });
-                  console.log(`Screenshot taken: ${path}`);
+                  console.log(\`Screenshot taken: \${path}\`);
               } catch (err) {
-                  console.error(`Failed to take screenshot ${path}: ${err.message}`);
+                  console.error(\`Failed to take screenshot \${path}: \${err.message}\`);
               }
           }
 
           async function reconnectVPN() {
-              console.log("Reconnecting to a different VPN server...");
+              console.log("Reconnecting VPN...");
               try {
                   execSync("sudo nordvpn disconnect", { stdio: 'inherit' });
                   await sleep(5000);
                   execSync("sudo nordvpn connect", { stdio: 'inherit' });
                   await sleep(10000);
-                  
                   const newIP = execSync("curl -s https://api64.ipify.org").toString().trim();
                   console.log("New VPN IP:", newIP);
                   return true;
               } catch (error) {
-                  console.error("Failed to reconnect VPN:", error.message);
+                  console.error("VPN reconnect failed:", error.message);
                   return false;
               }
           }
 
           async function visitRumble(videoUrl) {
-              console.log("Launching Puppeteer...");
+              console.log("Launching browser...");
               let browser = await puppeteer.launch({
                   headless: "new",
                   ignoreHTTPSErrors: true,
@@ -165,27 +164,27 @@ jobs:
               await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/133.0.0.0 Safari/537.36');
               await page.setCacheEnabled(false);
 
-              console.log("Navigating to Rumble video...");
+              console.log("Navigating to:", videoUrl);
               await page.goto(videoUrl, { waitUntil: 'networkidle2', timeout: 120000 });
-
-              console.log("Waiting before attempting playback...");
               await sleep(3000);
-              await safeScreenshot(page, `./screenshots/rumble_landing_${Date.now()}.png`);
+              await safeScreenshot(page, \`./screenshots/rumble_landing_\${Date.now()}.png\`);
 
               const playButtonSelectors = [
+                  '.bigPlayUIInner.ctp',               // Rumble's main play button
                   'button[aria-label="Play"]',
                   '.vjs-big-play-button',
-                  '.icon-play'
+                  '.icon-play',
+                  'div[class*=play]'
               ];
 
               let playButton = null;
               for (const selector of playButtonSelectors) {
                   playButton = await page.$(selector);
                   if (playButton) {
-                      console.log(`Play button found using selector: ${selector}`);
+                      console.log(\`Play button found using selector: \${selector}\`);
                       await playButton.click();
                       await sleep(3000);
-                      await safeScreenshot(page, `./screenshots/rumble_play_clicked_${Date.now()}.png`);
+                      await safeScreenshot(page, \`./screenshots/rumble_play_clicked_\${Date.now()}.png\`);
                       break;
                   }
               }
@@ -194,31 +193,32 @@ jobs:
                   console.warn("Play button not found. Proceeding without clicking.");
               }
 
-              console.log("Watching video for 30 seconds with periodic screenshots...");
+              console.log("Monitoring playback for 30 seconds...");
               for (let t = 5; t <= 30; t += 5) {
                   await sleep(5000);
-                  await safeScreenshot(page, `./screenshots/rumble_watch_${t}s_${Date.now()}.png`);
+                  await safeScreenshot(page, \`./screenshots/rumble_watch_\${t}s_\${Date.now()}.png\`);
+
                   const isPlaying = await page.evaluate(() => {
                       const video = document.querySelector("video");
                       return video && !video.paused && !video.ended && video.readyState > 2;
                   });
 
                   if (!isPlaying) {
-                      console.log("Video is not playing. Attempting VPN reconnect...");
+                      console.log("Video appears to have stopped. Attempting VPN reconnect...");
                       await browser.close();
                       const reconnected = await reconnectVPN();
                       if (reconnected) {
                           return await visitRumble(videoUrl);
                       } else {
-                          throw new Error("VPN reconnect failed. Aborting.");
+                          throw new Error("VPN reconnect failed.");
                       }
                   }
               }
 
-              const finalHtml = await page.content();
-              const htmlFile = `./screenshots/final_rumble_page_${Date.now()}.html`;
-              fs.writeFileSync(htmlFile, finalHtml);
-              console.log(`Final HTML page saved: ${htmlFile}`);
+              const html = await page.content();
+              const htmlFile = \`./screenshots/final_rumble_page_\${Date.now()}.html\`;
+              fs.writeFileSync(htmlFile, html);
+              console.log("Saved final HTML page:", htmlFile);
 
               console.log("Closing browser...");
               await browser.close();
@@ -229,16 +229,16 @@ jobs:
               await visitRumble(videoUrl);
           }
 
-          run().catch(error => {
-              console.error("Script failed:", error.message);
+          run().catch(err => {
+              console.error("Script failed:", err.message);
           });
-          EOL
+          EOF
 
       - name: Run Puppeteer Script
         run: |
           VIDEO_URL="${{ github.event.inputs.video_url || 'https://rumble.com/v6r0vz6-automate.html' }}"
-          echo "Visiting: $VIDEO_URL"
-          node scripts/rumble-visit.js "$VIDEO_URL" | tee rumble_script_output.log
+          echo "Starting Rumble visit: $VIDEO_URL"
+          node scripts/rumble-visit.js "$VIDEO_URL" | tee rumble_output.log
 
       - name: Upload Debug Artifacts
         if: always()
