@@ -23,85 +23,30 @@ jobs:
 
       - name: Install Essential Dependencies
         run: |
-          echo "Updating package lists..."
           apt update
-          
-          echo "Installing base and system packages..."
-          apt install -y \
-            curl wget sudo iproute2 apt-transport-https gnupg ca-certificates
-
-          echo "Installing Node.js 20 via NodeSource..."
+          apt install -y curl wget sudo iproute2 apt-transport-https gnupg ca-certificates
           curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
           apt install -y nodejs
-
-          echo "Installing Chromium dependencies..."
-          apt install -y \
-            fonts-liberation \
-            libatk-bridge2.0-0 \
-            libatk1.0-0 \
-            libatspi2.0-0 \
-            libcups2 \
-            libdbus-1-3 \
-            libgbm1 \
-            libgtk-3-0 \
-            libnspr4 \
-            libnss3 \
-            libpango-1.0-0 \
-            libx11-6 \
-            libxcb1 \
-            libxcomposite1 \
-            libxdamage1 \
-            libxext6 \
-            libxfixes3 \
-            libxrandr2 \
-            libxshmfence1 \
-            libxss1 \
-            libasound2t64 \
-            libpulse0 \
-            libxkbcommon0 \
-            xdg-utils \
-            lsb-release \
-            libasound2-plugins
-
-          echo "Installed Node.js version: $(node -v) and npm version: $(npm -v)"
+          apt install -y fonts-liberation libatk-bridge2.0-0 libatk1.0-0 libatspi2.0-0 libcups2 libdbus-1-3 libgbm1 libgtk-3-0 libnspr4 libnss3 libpango-1.0-0 libx11-6 libxcb1 libxcomposite1 libxdamage1 libxext6 libxfixes3 libxrandr2 libxshmfence1 libxss1 libasound2t64 libpulse0 libxkbcommon0 xdg-utils lsb-release libasound2-plugins
 
       - name: Install and Connect NordVPN
         env:
           NORDVPN_TOKEN: ${{ secrets.NORDVPN_TOKEN }}
         run: |
-          echo "Adding NordVPN repository..."
           echo "deb https://repo.nordvpn.com/deb/nordvpn/debian stable main" | sudo tee /etc/apt/sources.list.d/nordvpn.list
-          
-          echo "Downloading NordVPN GPG key..."
-          wget -q -O /tmp/nordvpn_public.asc https://repo.nordvpn.com/gpg/nordvpn_public.asc || \
-          curl -fsSL https://repo.nordvpn.com/gpg/nordvpn_public.asc -o /tmp/nordvpn_public.asc
-          
-          if [ ! -s /tmp/nordvpn_public.asc ]; then
-            echo "Failed to download a valid NordVPN GPG key. Exiting."
-            exit 1
-          fi
-          
-          echo "Importing GPG key..."
+          wget -q -O /tmp/nordvpn_public.asc https://repo.nordvpn.com/gpg/nordvpn_public.asc || curl -fsSL https://repo.nordvpn.com/gpg/nordvpn_public.asc -o /tmp/nordvpn_public.asc
           sudo gpg --dearmor -o /etc/apt/trusted.gpg.d/nordvpn.gpg /tmp/nordvpn_public.asc
-          
-          echo "Updating package lists and installing NordVPN..."
           sudo apt update
           sudo apt install -y nordvpn
-          
-          echo "Starting NordVPN service..."
-          sudo /etc/init.d/nordvpn start || { echo "Failed to start NordVPN service."; exit 1; }
+          sudo /etc/init.d/nordvpn start || exit 1
           sleep 5
-          
-          echo "Logging in and connecting to NordVPN..."
           sudo nordvpn login --token "$NORDVPN_TOKEN"
           sudo nordvpn set technology nordlynx
           sudo nordvpn connect
           sleep 10
-          echo "VPN Connected. Public IP: $(curl -s https://api64.ipify.org)"
 
       - name: Install Puppeteer Dependencies
         run: |
-          echo "Initializing Node.js project and installing Puppeteer modules..."
           npm init -y
           npm install puppeteer puppeteer-core puppeteer-extra puppeteer-extra-plugin-stealth
 
@@ -123,14 +68,14 @@ jobs:
           async function safeScreenshot(page, path) {
               try {
                   await page.screenshot({ path });
-                  console.log(\`Screenshot taken: \${path}\`);
+                  console.log(`Screenshot taken: ${path}`);
               } catch (err) {
-                  console.error(\`Failed to take screenshot \${path}: \${err.message}\`);
+                  console.error(`Failed to take screenshot ${path}: ${err.message}`);
               }
           }
 
           async function reconnectVPN() {
-              console.log("Reconnecting VPN...");
+              console.log("Reconnecting to a different VPN server...");
               try {
                   execSync("sudo nordvpn disconnect", { stdio: 'inherit' });
                   await sleep(5000);
@@ -140,37 +85,30 @@ jobs:
                   console.log("New VPN IP:", newIP);
                   return true;
               } catch (error) {
-                  console.error("VPN reconnect failed:", error.message);
+                  console.error("Failed to reconnect VPN:", error.message);
                   return false;
               }
           }
 
           async function visitRumble(videoUrl) {
-              console.log("Launching browser...");
               let browser = await puppeteer.launch({
                   headless: "new",
                   ignoreHTTPSErrors: true,
                   executablePath: require('puppeteer').executablePath(),
-                  args: [
-                      '--ignore-certificate-errors',
-                      '--no-sandbox',
-                      '--disable-setuid-sandbox',
-                      '--disable-dev-shm-usage',
-                      '--disable-gpu'
-                  ]
+                  args: ['--no-sandbox', '--disable-setuid-sandbox']
               });
 
               let page = await browser.newPage();
               await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/133.0.0.0 Safari/537.36');
               await page.setCacheEnabled(false);
 
-              console.log("Navigating to:", videoUrl);
+              console.log("Navigating to Rumble video...");
               await page.goto(videoUrl, { waitUntil: 'networkidle2', timeout: 120000 });
               await sleep(3000);
-              await safeScreenshot(page, \`./screenshots/rumble_landing_\${Date.now()}.png\`);
+              await safeScreenshot(page, `./screenshots/rumble_landing_${Date.now()}.png`);
 
               const playButtonSelectors = [
-                  '.bigPlayUIInner.ctp',               // Rumble's main play button
+                  '.bigPlayUIInner.ctp',
                   'button[aria-label="Play"]',
                   '.vjs-big-play-button',
                   '.icon-play',
@@ -181,10 +119,10 @@ jobs:
               for (const selector of playButtonSelectors) {
                   playButton = await page.$(selector);
                   if (playButton) {
-                      console.log(\`Play button found using selector: \${selector}\`);
+                      console.log(`Play button found using selector: ${selector}`);
                       await playButton.click();
                       await sleep(3000);
-                      await safeScreenshot(page, \`./screenshots/rumble_play_clicked_\${Date.now()}.png\`);
+                      await safeScreenshot(page, `./screenshots/rumble_play_clicked_${Date.now()}.png`);
                       break;
                   }
               }
@@ -193,34 +131,30 @@ jobs:
                   console.warn("Play button not found. Proceeding without clicking.");
               }
 
-              console.log("Monitoring playback for 30 seconds...");
               for (let t = 5; t <= 30; t += 5) {
                   await sleep(5000);
-                  await safeScreenshot(page, \`./screenshots/rumble_watch_\${t}s_\${Date.now()}.png\`);
-
+                  await safeScreenshot(page, `./screenshots/rumble_watch_${t}s_${Date.now()}.png`);
                   const isPlaying = await page.evaluate(() => {
                       const video = document.querySelector("video");
                       return video && !video.paused && !video.ended && video.readyState > 2;
                   });
 
                   if (!isPlaying) {
-                      console.log("Video appears to have stopped. Attempting VPN reconnect...");
+                      console.log("Video is not playing. Attempting VPN reconnect...");
                       await browser.close();
                       const reconnected = await reconnectVPN();
                       if (reconnected) {
                           return await visitRumble(videoUrl);
                       } else {
-                          throw new Error("VPN reconnect failed.");
+                          throw new Error("VPN reconnect failed. Aborting.");
                       }
                   }
               }
 
-              const html = await page.content();
-              const htmlFile = \`./screenshots/final_rumble_page_\${Date.now()}.html\`;
-              fs.writeFileSync(htmlFile, html);
-              console.log("Saved final HTML page:", htmlFile);
-
-              console.log("Closing browser...");
+              const finalHtml = await page.content();
+              const htmlFile = `./screenshots/final_rumble_page_${Date.now()}.html`;
+              fs.writeFileSync(htmlFile, finalHtml);
+              console.log(`Final HTML page saved: ${htmlFile}`);
               await browser.close();
           }
 
@@ -229,16 +163,16 @@ jobs:
               await visitRumble(videoUrl);
           }
 
-          run().catch(err => {
-              console.error("Script failed:", err.message);
+          run().catch(error => {
+              console.error("Script failed:", error.message);
           });
           EOF
 
       - name: Run Puppeteer Script
         run: |
           VIDEO_URL="${{ github.event.inputs.video_url || 'https://rumble.com/v6r0vz6-automate.html' }}"
-          echo "Starting Rumble visit: $VIDEO_URL"
-          node scripts/rumble-visit.js "$VIDEO_URL" | tee rumble_output.log
+          echo "Visiting: $VIDEO_URL"
+          node scripts/rumble-visit.js "$VIDEO_URL" | tee rumble_script_output.log
 
       - name: Upload Debug Artifacts
         if: always()
