@@ -86,6 +86,7 @@ jobs:
                   return true;
               } catch (error) {
                   console.error("Failed to reconnect VPN:", error.message);
+                  reconnectVPN();
                   return false;
               }
           }
