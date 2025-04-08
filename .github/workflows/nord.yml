@@ -214,9 +214,9 @@ jobs:
               try {
                   // Use synchronous execution to ensure VPN reconnects before continuing
                   execSync("sudo nordvpn disconnect", { stdio: 'inherit' });
-                  await sleep(5000);
+                  await sleep(30000);
                   execSync("sudo nordvpn connect", { stdio: 'inherit' });
-                  await sleep(10000);
+                  await sleep(30000);
                   
                   // Check new IP
                   const newIP = execSync("curl -s https://api64.ipify.org").toString().trim();
