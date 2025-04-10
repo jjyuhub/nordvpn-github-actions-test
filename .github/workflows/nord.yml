@@ -42,6 +42,10 @@ jobs:
           sleep 5
           sudo nordvpn login --token "$NORDVPN_TOKEN"
           sudo nordvpn set technology nordlynx
+          until sudo nordvpn connect; do
+            echo "NordVPN connection failed. Retrying in 10 seconds..."
+            sleep 10
+          done
           sleep 10
 
       - name: Install Puppeteer Dependencies
@@ -88,7 +92,6 @@ jobs:
                   return reconnectVPN();
               }
           }
-          reconnectVPN();
 
           async function visitRumble(videoUrl) {
               let browser = await puppeteer.launch({
